@@ -1,0 +1,39 @@
+{
+    "id": "maven-build-validator",
+    "name": "MavenBuildValidatorTask",
+    "friendlyName": "Maven Build Validator Task",
+    "description": "Validates files in PR and triggers Maven build",
+    "author": "Diego Bejarano",
+    "helpMarkDown": "",
+    "category": "Build",
+    "visibility": [
+      "Build"
+    ],
+    "runsOn": [
+      "Agent"
+    ],
+    "inputs": [
+        {
+          "name": "mavenGoal",
+          "type": "string",
+          "label": "Maven Goal",
+          "defaultValue": "clean install",
+          "required": true,
+          "helpMarkDown": "Specify the Maven goal (e.g., clean install)"
+        },
+        {
+          "name": "mainPomPath",
+          "type": "string",
+          "label": "Main POM Path",
+          "defaultValue": "pom.xml",
+          "required": true,
+          "helpMarkDown": "Path to the main POM file (e.g., /path/to/main/pom.xml)"
+        }
+      ],
+    "execution": {
+      "Node": {
+        "target": "index.js"
+      }
+    }
+  }
+  
