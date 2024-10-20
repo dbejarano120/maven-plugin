@@ -1,7 +1,7 @@
 {
     "manifestVersion": 1,
-    "id": "maven-speedup",
-    "publisher": "",
+    "id": "maven-build-validator-task",
+    "publisher": "dbejarano120",
     "version": "1.0.0",
     "name": "Maven Speedup",
     "description": "Provide a command with the modules you want Maven to build.",
@@ -14,26 +14,26 @@
     ],
     "contributions": [
         {
-            "id": "my-hub",
-            "type": "ms.vss-web.hub",
+            "id": "maven-build-validator-task",
+            "type": "ms.vss-distributed-task.task",
             "targets": [
-                "ms.vss-code-web.code-hub-group"
+              "ms.vss-distributed-task.tasks"
             ],
             "properties": {
-                "name": "My Hub",
-                "uri": "my-hub.html"
+              "name": "MavenBuildValidatorTask"
             }
-        }
+          }
     ],
     "files": [
         {
-            "path": "my-hub.html",
-            "addressable": true
-        },
-        {
-            "path": "node_modules/azure-devops-extension-sdk",
+            "path": "MavenBuildValidatorTask/node_modules/azure-devops-extension-sdk",
             "addressable": true,
             "packagePath": "lib"
+        },
+        {
+            "path": "MavenBuildValidatorTask",
+            "addressable": true,
+            "contentType": "application/zip"
         }
     ]
 }

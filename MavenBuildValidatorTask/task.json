@@ -1,5 +1,5 @@
 {
-    "id": "maven-build-validator",
+    "id": "97349341-b621-45d7-a5fd-71aa17caa88b",
     "name": "MavenBuildValidatorTask",
     "friendlyName": "Maven Build Validator Task",
     "description": "Validates files in PR and triggers Maven build",
