@@ -1,39 +1,33 @@
 {
     "manifestVersion": 1,
-    "id": "maven-build-validator-task",
+    "id": "custom-maven-build-task",
+    "name": "Maven Custom Build",
+    "version": "1.0.6",
     "publisher": "dbejarano120",
-    "version": "1.0.0",
-    "name": "Maven Speedup",
-    "description": "Provide a command with the modules you want Maven to build.",
-    "public": false,
-    "categories": ["Azure Repos"],
     "targets": [
         {
             "id": "Microsoft.VisualStudio.Services"
         }
-    ],
-    "contributions": [
-        {
-            "id": "maven-build-validator-task",
-            "type": "ms.vss-distributed-task.task",
-            "targets": [
-              "ms.vss-distributed-task.tasks"
-            ],
-            "properties": {
-              "name": "MavenBuildValidatorTask"
-            }
-          }
+    ],    
+    "description": "Provide a command with the modules you want Maven to build.",
+    "categories": [
+        "Azure Pipelines"
     ],
     "files": [
         {
-            "path": "MavenBuildValidatorTask/node_modules/azure-devops-extension-sdk",
-            "addressable": true,
-            "packagePath": "lib"
-        },
+            "path": "customavenbuildtask"
+        }
+    ],
+    "contributions": [
         {
-            "path": "MavenBuildValidatorTask",
-            "addressable": true,
-            "contentType": "application/zip"
+            "id": "custom-maven-build-validator-task",
+            "type": "ms.vss-distributed-task.task",
+            "targets": [
+                "ms.vss-distributed-task.tasks"
+            ],
+            "properties": {
+                "name": "customavenbuildtask"
+            }
         }
     ]
 }

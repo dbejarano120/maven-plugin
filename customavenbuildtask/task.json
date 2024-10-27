@@ -1,17 +1,17 @@
 {
-    "id": "97349341-b621-45d7-a5fd-71aa17caa88b",
-    "name": "MavenBuildValidatorTask",
-    "friendlyName": "Maven Build Validator Task",
-    "description": "Validates files in PR and triggers Maven build",
-    "author": "Diego Bejarano",
+    "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",  
+    "id": "7ccf1166-6089-4690-8dcb-ce3d91f459ec",
+    "name": "customMavenBuildTask",
+    "friendlyName": "Custom Maven Build Task",
+    "description": "Validates files in PR and triggers a custom Maven build",
+    "author": "dbejarano120",
     "helpMarkDown": "",
-    "category": "Build",
-    "visibility": [
-      "Build"
-    ],
-    "runsOn": [
-      "Agent"
-    ],
+    "category": "Utility",
+    "version": {
+      "Major": 1,
+      "Minor": 0,
+      "Patch": 6
+    },
     "inputs": [
         {
           "name": "mavenGoal",
@@ -31,7 +31,7 @@
         }
       ],
     "execution": {
-      "Node": {
+      "Node20_1": {
         "target": "index.js"
       }
     }
