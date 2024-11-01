@@ -23,11 +23,11 @@ async function run() {
     const modulesToBuild: Set<string> = await determineModulesToBuild(changedFiles);
 
     // Always include the main module
-    modulesToBuild.add(mainPomPath);
+    // modulesToBuild.add(mainPomPath);
 
     // Run Maven with the specified modules
     const modulesParam = Array.from(modulesToBuild).join(',');
-    const mavenCommand = `mvn -pl ${modulesParam} -am ${mavenGoal}`;
+    const mavenCommand = `mvn ${mainPomPath} -pl ${modulesParam} -am ${mavenGoal}`;
     console.log(`Executing Maven command: ${mavenCommand}`);
     execSync(mavenCommand, { stdio: 'inherit' });
 
@@ -141,11 +141,26 @@ async function parseModuleNameFromPom(pomPath: string): Promise<string | null> {
   try {
     const pomXml = fs.readFileSync(pomPath, 'utf-8');
     const result = await parseStringPromise(pomXml);
-    const artifactId = result.project.artifactId?.[0];
-    if (artifactId) {
-      console.log(`Module found: ${artifactId} in ${pomPath}`);
-      return artifactId;
+    const currentArtifactId = result.project.artifactId?.[0];
+    if (!currentArtifactId) {
+      console.warn(`No artifactId found in ${pomPath}`);
+      return null;
     }
+
+    // Check for parent groupId
+    console.log('CurrentArtifactId:', currentArtifactId);
+    let moduleName = currentArtifactId;
+    const parent = result.project.parent?.[0];
+    if (parent) {
+      const parentGroupId = parent.groupId?.[0];
+      if (parentGroupId) {
+        moduleName = parentGroupId + ':' + moduleName
+      }
+    }
+
+    console.log('ModuleName:', moduleName);
+    return moduleName;
+
   } catch (error) {
     console.error(`Error parsing ${pomPath}:`, error);
   }
