@@ -36,6 +36,7 @@ async function run() {
         const mainPomPath = tl.getInput('mainPomPath', true) || 'pom.xml';
         // Parse modules from main POM file
         const modules = await parseModulesFromPom(mainPomPath);
+        console.log(`main POM: ${mainPomPath}`);
         console.log(`Modules in main POM: ${modules}`);
         // Fetch changed files from PR
         const changedFiles = await getChangedFiles();
@@ -56,7 +57,7 @@ async function run() {
 }
 // Updated getChangedFiles function using azure-devops-node-api
 async function getChangedFiles() {
-    console.log('Available variables:', tl.getVariables());
+    //console.log('Available variables:', tl.getVariables());
     const orgUrl = tl.getVariable('System.TeamFoundationCollectionUri');
     console.log('orgUrl:', orgUrl);
     const project = tl.getVariable('System.TeamProject');
@@ -103,19 +104,23 @@ async function parseModulesFromPom(pomPath) {
 async function determineModulesToBuild(changedFiles) {
     const modulesToBuild = new Set();
     for (const file of changedFiles) {
+        console.log('Changed file:', file);
         const modulePath = await getModuleFromFilePath(file);
         if (modulePath) {
             modulesToBuild.add(modulePath);
         }
     }
+    console.log('modules To Build:', modulesToBuild);
     return modulesToBuild;
 }
 // Improved function to get module name from file path
 async function getModuleFromFilePath(filePath) {
     // Start with the directory containing the file
     let currentDir = path.dirname(filePath);
-    while (currentDir !== path.dirname(currentDir)) { // Stop when reaching the root
-        const pomPath = path.join(currentDir, 'pom.xml');
+    console.log('currentDir:', currentDir);
+    while (currentDir !== path.parse(currentDir).root) { // Stop when reaching the root
+        const pomPath = path.join('.', currentDir, 'pom.xml'); // Prepend '.' to make it relative
+        console.log('pomPath:', pomPath);
         if (fs.existsSync(pomPath)) {
             // If pom.xml exists in this directory, try to parse it for the module name
             const moduleName = await parseModuleNameFromPom(pomPath);
@@ -125,6 +130,7 @@ async function getModuleFromFilePath(filePath) {
         }
         // Move one level up in the directory hierarchy
         currentDir = path.dirname(currentDir);
+        console.log('Move one level up currentDir:', currentDir);
     }
     return null;
 }

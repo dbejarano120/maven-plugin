@@ -2,7 +2,7 @@
     "manifestVersion": 1,
     "id": "custom-maven-build-task",
     "name": "Maven Custom Build",
-    "version": "1.0.6",
+    "version": "1.0.12",
     "publisher": "dbejarano120",
     "targets": [
         {

@@ -13,6 +13,7 @@ async function run() {
 
     // Parse modules from main POM file
     const modules = await parseModulesFromPom(mainPomPath);
+    console.log(`main POM: ${mainPomPath}`);
     console.log(`Modules in main POM: ${modules}`);
 
     // Fetch changed files from PR
@@ -116,9 +117,10 @@ async function determineModulesToBuild(changedFiles: string[]): Promise<Set<stri
 async function getModuleFromFilePath(filePath: string): Promise<string | null> {
   // Start with the directory containing the file
   let currentDir = path.dirname(filePath);
-
-  while (currentDir !== path.dirname(currentDir)) { // Stop when reaching the root
-    const pomPath = path.join(currentDir, 'pom.xml');
+  console.log('currentDir:', currentDir);
+  while  (currentDir !== path.parse(currentDir).root) { // Stop when reaching the root
+    const pomPath = path.join('.', currentDir, 'pom.xml'); // Prepend '.' to make it relative
+    console.log('pomPath:', pomPath);
     if (fs.existsSync(pomPath)) {
       // If pom.xml exists in this directory, try to parse it for the module name
       const moduleName = await parseModuleNameFromPom(pomPath);
@@ -128,6 +130,8 @@ async function getModuleFromFilePath(filePath: string): Promise<string | null> {
     }
     // Move one level up in the directory hierarchy
     currentDir = path.dirname(currentDir);
+    console.log('Move one level up currentDir:', currentDir);
+
   }
   return null;
 }
