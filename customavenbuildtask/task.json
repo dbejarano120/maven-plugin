@@ -2,7 +2,7 @@
     "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",  
     "id": "7ccf1166-6089-4690-8dcb-ce3d91f459ec",
     "name": "customMavenBuildTask",
-    "friendlyName": "Custom Maven Build Task",
+    "friendlyName": "Custom Maven Modules Task",
     "description": "Scan files and set the modules for a Maven build",
     "author": "dbejarano120",
     "helpMarkDown": "",
@@ -10,7 +10,7 @@
     "version": {
       "Major": 1,
       "Minor": 0,
-      "Patch": 19
+      "Patch": 21
     },
     "execution": {
       "Node20_1": {

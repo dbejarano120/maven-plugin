@@ -1,15 +1,24 @@
 {
     "manifestVersion": 1,
     "id": "custom-maven-build-task",
-    "name": "Maven Custom Modules Build Extension",
-    "version": "1.0.19",
+    "name": "Maven Custom Modules Extension",
+    "version": "1.0.21",
     "publisher": "dbejarano120",
+    "description": "Provide the modules you want Maven to build.",
     "targets": [
         {
             "id": "Microsoft.VisualStudio.Services"
         }
-    ],    
-    "description": "Provide a command with the modules you want Maven to build.",
+    ], 
+    "content": {
+        "details": {
+            "path": "README.md"
+        }
+    },
+    "repository": {
+        "type": "git",
+        "uri": "https://github.com/dbejarano120/maven-plugin"
+    },
     "icons": {
         "default": "icon.png"
     },
@@ -19,6 +28,9 @@
     "files": [
         {
             "path": "customavenbuildtask"
+        },
+        {
+        "path": "images"
         }
     ],
     "contributions": [

@@ -1,6 +1,16 @@
-# Maven Custom Modules Build Extension
+# Maven Custom Modules Extension
 
-This Azure DevOps extension is designed to help streamline Maven builds by validating and identifying the modules affected by changes in a pull request. The extension scans modified files, determines the relevant modules, and sets these modules in a variable called `modulesParam`. This variable can be used as an input for a Maven build task to limit the scope of the build to only the necessary modules, optimizing build times and resources.
+This Azure DevOps extension is designed to help streamline Maven builds by cheking and identifying the modules affected by changes in a pull request. The extension scans modified files, determines the relevant modules, and sets these modules in a variable called `modulesParam`. This variable can be used as an input for a Maven build task to limit the scope of the build to only the necessary modules, **optimizing build times and resources**.
+
+#### Before
+
+![image before](./images/before-command.png)
+
+#### After
+
+![image command](./images/command-after.png)
+![image info](./images/result-after.png)
+
 
 ## Features
 
@@ -115,7 +125,7 @@ steps:
 
 ### Support
 
-For questions or feedback, please reach out through the  [Azure DevOps Marketplace](https://marketplace.visualstudio.com/)
+For questions or feedback, please reach out through the Azure DevOps Marketplace
 
 ### Build the project for customization
 
