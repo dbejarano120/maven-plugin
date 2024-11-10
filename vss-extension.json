@@ -1,8 +1,8 @@
 {
     "manifestVersion": 1,
     "id": "custom-maven-build-task",
-    "name": "Maven Custom Build",
-    "version": "1.0.15",
+    "name": "Maven Custom Modules Build",
+    "version": "1.0.18",
     "publisher": "dbejarano120",
     "targets": [
         {

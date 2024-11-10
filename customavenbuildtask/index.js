@@ -26,33 +26,24 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const tl = __importStar(require("azure-pipelines-task-lib/task"));
 const azdev = __importStar(require("azure-devops-node-api"));
 const path = __importStar(require("path"));
-const child_process_1 = require("child_process");
 const fs = __importStar(require("fs"));
 const xml2js_1 = require("xml2js");
 async function run() {
     try {
-        // Retrieve inputs
-        const mavenGoal = tl.getInput('mavenGoal', true) || 'clean install';
-        const mainPomPath = tl.getInput('mainPomPath', true) || 'pom.xml';
-        // Parse modules from main POM file
-        const modules = await parseModulesFromPom(mainPomPath);
-        console.log(`main POM: ${mainPomPath}`);
-        console.log(`Modules in main POM: ${modules}`);
         // Fetch changed files from PR
         const changedFiles = await getChangedFiles();
         // Determine modules to build based on changes
         const modulesToBuild = await determineModulesToBuild(changedFiles);
-        // Always include the main module
-        // modulesToBuild.add(mainPomPath);
         // Run Maven with the specified modules
         const modulesParam = Array.from(modulesToBuild).join(',');
-        const mavenCommand = `mvn ${mainPomPath} -pl ${modulesParam} -am ${mavenGoal}`;
-        console.log(`Executing Maven command: ${mavenCommand}`);
-        (0, child_process_1.execSync)(mavenCommand, { stdio: 'inherit' });
-        tl.setResult(tl.TaskResult.Succeeded, 'Build completed successfully.');
+        // Log the modulesParam for debugging
+        console.log(`modulesParam: ${modulesParam}`);
+        // Set modulesParam as an output variable
+        console.log(`##vso[task.setvariable variable=modulesParam;isOutput=true]${modulesParam}`);
+        tl.setResult(tl.TaskResult.Succeeded, 'Build custom modules successfully.');
     }
     catch (error) {
-        tl.setResult(tl.TaskResult.Failed, `Build failed: ${error}`);
+        tl.setResult(tl.TaskResult.Failed, `Build custom modules failed: ${error}`);
     }
 }
 // Updated getChangedFiles function using azure-devops-node-api
@@ -93,18 +84,11 @@ async function getChangedFiles() {
     console.log('Changed files:', changedFiles);
     return changedFiles;
 }
-// Function to parse module names from main POM
-async function parseModulesFromPom(pomPath) {
-    const pomXml = fs.readFileSync(pomPath, 'utf-8');
-    const result = await (0, xml2js_1.parseStringPromise)(pomXml);
-    const modules = result.project.modules?.[0].module || [];
-    return modules.map((module) => module.trim());
-}
 // Function to determine modules to build based on changed files
 async function determineModulesToBuild(changedFiles) {
     const modulesToBuild = new Set();
     for (const file of changedFiles) {
-        console.log('Changed file:', file);
+        //console.log('Changed file:', file);
         const modulePath = await getModuleFromFilePath(file);
         if (modulePath) {
             modulesToBuild.add(modulePath);
@@ -117,10 +101,10 @@ async function determineModulesToBuild(changedFiles) {
 async function getModuleFromFilePath(filePath) {
     // Start with the directory containing the file
     let currentDir = path.dirname(filePath);
-    console.log('currentDir:', currentDir);
+    //console.log('currentDir:', currentDir);
     while (currentDir !== path.parse(currentDir).root) { // Stop when reaching the root
         const pomPath = path.join('.', currentDir, 'pom.xml'); // Prepend '.' to make it relative
-        console.log('pomPath:', pomPath);
+        //console.log('pomPath:', pomPath);
         if (fs.existsSync(pomPath)) {
             // If pom.xml exists in this directory, try to parse it for the module name
             const moduleName = await parseModuleNameFromPom(pomPath);
@@ -130,7 +114,7 @@ async function getModuleFromFilePath(filePath) {
         }
         // Move one level up in the directory hierarchy
         currentDir = path.dirname(currentDir);
-        console.log('Move one level up currentDir:', currentDir);
+        //console.log('Move one level up currentDir:', currentDir);
     }
     return null;
 }
@@ -141,11 +125,11 @@ async function parseModuleNameFromPom(pomPath) {
         const result = await (0, xml2js_1.parseStringPromise)(pomXml);
         const currentArtifactId = result.project.artifactId?.[0];
         if (!currentArtifactId) {
-            console.warn(`No artifactId found in ${pomPath}`);
+            //console.warn(`No artifactId found in ${pomPath}`);
             return null;
         }
         // Check for parent groupId
-        console.log('CurrentArtifactId:', currentArtifactId);
+        //console.log('CurrentArtifactId:', currentArtifactId);
         let moduleName = currentArtifactId;
         const parent = result.project.parent?.[0];
         if (parent) {
@@ -154,7 +138,7 @@ async function parseModuleNameFromPom(pomPath) {
                 moduleName = parentGroupId + ':' + moduleName;
             }
         }
-        console.log('ModuleName:', moduleName);
+        //console.log('ModuleName:', moduleName);
         return moduleName;
     }
     catch (error) {

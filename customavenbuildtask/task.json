@@ -10,26 +10,8 @@
     "version": {
       "Major": 1,
       "Minor": 0,
-      "Patch": 15
+      "Patch": 18
     },
-    "inputs": [
-        {
-          "name": "mavenGoal",
-          "type": "string",
-          "label": "Maven Goal",
-          "defaultValue": "clean install",
-          "required": true,
-          "helpMarkDown": "Specify the Maven goal (e.g., clean install)"
-        },
-        {
-          "name": "mainPomPath",
-          "type": "string",
-          "label": "Main POM Path",
-          "defaultValue": "pom.xml",
-          "required": true,
-          "helpMarkDown": "Path to the main POM file (e.g., /path/to/main/pom.xml)"
-        }
-      ],
     "execution": {
       "Node20_1": {
         "target": "index.js"
