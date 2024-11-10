@@ -2,7 +2,7 @@
     "manifestVersion": 1,
     "id": "custom-maven-build-task",
     "name": "Maven Custom Modules Extension",
-    "version": "1.0.21",
+    "version": "1.0.28",
     "publisher": "dbejarano120",
     "description": "Provide the modules you want Maven to build.",
     "targets": [
@@ -13,6 +13,9 @@
     "content": {
         "details": {
             "path": "README.md"
+        },
+        "license": {
+            "path": "LICENSE.txt"
         }
     },
     "repository": {
@@ -20,7 +23,7 @@
         "uri": "https://github.com/dbejarano120/maven-plugin"
     },
     "icons": {
-        "default": "icon.png"
+        "default": "images/icon.png"
     },
     "categories": [
         "Azure Pipelines"
@@ -28,10 +31,8 @@
     "files": [
         {
             "path": "customavenbuildtask"
-        },
-        {
-        "path": "images"
         }
+        
     ],
     "contributions": [
         {
