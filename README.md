@@ -138,4 +138,4 @@ For questions or feedback, please reach out through the Azure DevOps Marketplace
 `tfx extension create --manifest-globs vss-extension.json`
 
 ### License
-This project is licensed under the MIT License. See the [LICENSE](https://github.com/dbejarano120/maven-plugin/blob/main/LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](https://github.com/dbejarano120/maven-plugin/blob/main/LICENSE.txt) file for details.
