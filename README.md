@@ -29,7 +29,7 @@ This Azure DevOps extension is designed to help streamline Maven builds by cheki
 
 ### Installation
 
-1. Go to the [Azure DevOps Marketplace](https://marketplace.visualstudio.com/) and install the **Maven Custom Modules Build Extension** for your organization.
+1. Go to the [Azure DevOps Marketplace](https://marketplace.visualstudio.com/items?itemName=dbejarano120.custom-maven-build-task) and install the **Maven Custom Modules Build Extension** for your organization.
 2. Configure the extension in your Azure DevOps pipeline.
 
 ### Usage

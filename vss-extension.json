@@ -2,8 +2,9 @@
     "manifestVersion": 1,
     "id": "custom-maven-build-task",
     "name": "Maven Custom Modules Extension",
-    "version": "1.0.28",
+    "version": "1.0.0",
     "publisher": "dbejarano120",
+    "public": true,
     "description": "Provide the modules you want Maven to build.",
     "targets": [
         {
