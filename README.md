@@ -1,141 +1,93 @@
-# Maven Custom Modules Extension
+# Custom Maven Build GitHub Action
 
-This Azure DevOps extension is designed to help streamline Maven builds by cheking and identifying the modules affected by changes in a pull request. The extension scans modified files, determines the relevant modules, and sets these modules in a variable called `modulesParam`. This variable can be used as an input for a Maven build task to limit the scope of the build to only include the necessary modules, **optimizing build times and resources**.
+This GitHub Action analyzes the files changed in a pull request to determine the Maven modules affected by these changes. It then outputs a comma-separated list of these modules, which can be used to selectively build only the necessary parts of your project, optimizing build times and resources.
 
-#### Before
+## How it Works
 
-![image before](https://raw.githubusercontent.com/dbejarano120/maven-plugin/refs/heads/main/images/before-command.png)
+When a pull request is opened or updated, this action:
+1.  Retrieves the list of files changed in the pull request using the GitHub API.
+2.  For each changed file, it traverses up the directory structure to find the nearest `pom.xml`.
+3.  It parses the `pom.xml` to extract the module identifier (usually `groupId:artifactId` or just `artifactId` if no parent `groupId` is specified).
+4.  A unique list of these module identifiers is compiled.
+5.  This list is then made available as an output variable.
 
-#### After
+## Inputs
 
-![image command](https://raw.githubusercontent.com/dbejarano120/maven-plugin/refs/heads/main/images/command-after.png)
+### `github-token`
+-   **Description**: The GitHub token used to authenticate with the GitHub API for fetching pull request files.
+-   **Required**: `false`
+-   **Default**: `${{ github.token }}`
+-   **Details**: In most cases, the default token provided by GitHub Actions is sufficient. You do not need to set this input explicitly unless you have specific permission requirements that the default token does not cover.
 
+## Outputs
 
-![image info](https://raw.githubusercontent.com/dbejarano120/maven-plugin/refs/heads/main/images/result-after.png)
+### `modulesParam`
+-   **Description**: A comma-separated string of Maven module identifiers (e.g., `com.example:module-a,com.example:module-b,another-artifact`) that are affected by the changes in the pull request. If no modules are affected or no `pom.xml` files are found for the changed files, this output will be an empty string.
 
+## Example Usage
 
-## Features
-
-- **Automated Module Detection**: The extension automatically scans files changed in a pull request, identifies the affected modules, and sets these modules in a variable.
-- **Customizable Maven Options**: The `modulesParam` variable is used to specify the relevant modules for Maven, enabling you to build only the required modules rather than the entire project.
-- **Integration with Maven Build**: The generated `modulesParam` variable can be used as an input for a Maven task, which then sets specific Maven options to build only the identified modules.
-
-## Getting Started
-
-### Prerequisites
-
-- Azure DevOps account
-- Basic knowledge of Azure Pipelines and Maven
-
-### Installation
-
-1. Go to the [Azure DevOps Marketplace](https://marketplace.visualstudio.com/items?itemName=dbejarano120.custom-maven-build-task) and install the **Maven Custom Modules Build Extension** for your organization.
-2. Configure the extension in your Azure DevOps pipeline.
-
-### Usage
-
-#### Step 1: Add the Maven Build Validator Task to Your Pipeline
-
-Add the custom `customMavenBuildTask` to your pipeline YAML file. This task will scan the changed files and identify the modules that need to be built.
+Here's an example of how to use this action in your GitHub Actions workflow:
 
 ```yaml
-- task: customMavenBuildTask@1
-  name: GenerateModulesParam
-```
-####  Step 2: Set Maven Options with modulesParam
-After the customMavenBuildTask runs, it sets the modulesParam variable. You can then use this variable in a Maven task to control the scope of the build.
+name: CI Build
 
-```yaml
-variables:
-  mavenOptions: ''  # Set mavenOptions to an empty string by default   
+on:
+  pull_request:
+    branches: [ main ] # Or your default/target branch
 
-- script: |
-    if [ -n "$(GenerateModulesParam.modulesParam)" ]; then
-      echo "##vso[task.setvariable variable=mavenOptions]-pl $(GenerateModulesParam.modulesParam) -am"
-    fi 
-  displayName: 'Set Maven Options' # Set the mavenOptions variable only if modulesParam has a value
+jobs:
+  determine-modules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4 # It's good practice to use the latest major version
 
-- task: Maven@4
-  inputs:
-    mavenPomFile: './mysite/pom.xml'
-    publishJUnitResults: true
-    testResultsFiles: '**/surefire-reports/TEST-*.xml'
-    javaHomeOption: 'JDKVersion'
-    mavenVersionOption: 'Default'
-    mavenAuthenticateFeed: false
-    effectivePomSkip: false
-    sonarQubeRunAnalysis: false
-    options: $(mavenOptions)
-```
-### How It Works
+      - name: Determine Modules to Build
+        id: custom-maven-build # Give an ID to the step to access its outputs
+        uses: ./customavenbuildtask # Assumes action.yml is in the 'customavenbuildtask' directory
+                                   # relative to the root of your repository.
+        # If you were to publish this to the GitHub Marketplace, it would be:
+        # uses: your-username/your-repo-name@v1
 
-**File Scan:** The `customMavenBuildTask` scans files changed and identifies the corresponding Maven modules.
+      - name: Echo Modules
+        if: steps.custom-maven-build.outputs.modulesParam != ''
+        run: echo "Modules to build are: ${{ steps.custom-maven-build.outputs.modulesParam }}"
 
-**Variable Setting:** It then sets the `modulesParam` variable with the names of the relevant modules, which can be referenced as input for other tasks. The modules follow the format `groupId:artifactId`
+      - name: Notify if no modules to build
+        if: steps.custom-maven-build.outputs.modulesParam == ''
+        run: echo "No specific modules identified for targeted build."
 
-**Maven Task Configuration:** By using the `modulesParam` in a Maven task’s options field, you limit the build to only the modified modules, reducing build times and resource usage.  Maven has an option `-pl` to include or exclude modules. So, the variable `mavenOptions` at the end will be `-pl $(GenerateModulesParam.modulesParam) -am`
-
-### Example YAML Pipeline
-Below is an example Azure Pipeline that uses the Maven Build Validator Extension:
-
-```yaml
-trigger:
-- master
-
-pr:
-  branches:
-    include:
-    - "*"
-
-pool:
-  vmImage: ubuntu-latest
-
-variables:
-  mavenOptions: ''  # Set mavenOptions to an empty string by default   
-
-steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
-
-- task: customMavenBuildTask@1
-  name: GenerateModulesParam
-
-# Set the mavenOptions variable only if modulesParam has a value
-- script: |
-    if [ -n "$(GenerateModulesParam.modulesParam)" ]; then
-      echo "##vso[task.setvariable variable=mavenOptions]-pl $(GenerateModulesParam.modulesParam) -am"
-    fi
-  displayName: 'Set Maven Options'
-
-- task: Maven@4
-  inputs:
-    mavenPomFile: './mysite/pom.xml'
-    publishJUnitResults: true
-    testResultsFiles: '**/surefire-reports/TEST-*.xml'
-    javaHomeOption: 'JDKVersion'
-    mavenVersionOption: 'Default'
-    mavenAuthenticateFeed: false
-    effectivePomSkip: false
-    sonarQubeRunAnalysis: false
-    options: $(mavenOptions)
-
-- script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
-  displayName: 'Run a multi-line script'
+      # Example of using the output in a subsequent Maven build step
+      - name: Build Specific Maven Modules
+        if: steps.custom-maven-build.outputs.modulesParam != ''
+        run: |
+          echo "Attempting to build modules: ${{ steps.custom-maven-build.outputs.modulesParam }}"
+          # Ensure your Maven setup (settings.xml, etc.) is correct
+          # The -am flag means "also make" which builds projects required by the specified modules
+          mvn package -DskipTests -pl ${{ steps.custom-maven-build.outputs.modulesParam }} -am
+        # working-directory: ./mysite # Optional: if your main pom.xml is not in the root
 ```
 
-### Support
+**Note on `uses: ./customavenbuildtask`**: This path assumes your workflow file (e.g., in `.github/workflows/`) and the `customavenbuildtask` directory (containing the `action.yml` for this action) are in the same repository. The path is relative to the root of your repository.
 
-For questions or feedback, please reach out through the Azure DevOps Marketplace
+## Development
 
-### Build the project for customization
+The action is written in TypeScript. To prepare it for use, you need to compile the TypeScript code into JavaScript.
 
-**Go to customavenbuildtask and then run**
-`npx tsc`
+### Building the Action
 
-**Go to the root folder and the run**
-`tfx extension create --manifest-globs vss-extension.json`
+1.  Ensure you have Node.js and npm installed.
+2.  Install dependencies (from the root of the `customavenbuildtask` directory):
+    ```bash
+    npm install --prefix customavenbuildtask
+    ```
+3.  Run the build script (from the root of the `customavenbuildtask` directory):
+    ```bash
+    npm run build --prefix customavenbuildtask
+    ```
+    This will compile `index.ts` to `index.js` and place it in the `customavenbuildtask` directory, as specified in `tsconfig.json` and the build script in `package.json`.
 
-### License
-This project is licensed under the MIT License. See the [LICENSE](https://github.com/dbejarano120/maven-plugin/blob/main/LICENSE.txt) file for details.
+Make sure to commit the generated `index.js` file (and `index.js.map` if generated and desired) along with the `action.yml` and other source files, as GitHub Actions will run the code from your repository, including the compiled JavaScript.
+
+## License
+This project is licensed under the MIT License.

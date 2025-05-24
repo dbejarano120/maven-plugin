@@ -1,0 +1,21 @@
+name: 'Custom Maven Build Task'
+description: 'Determines Maven modules to build based on changed files in a Pull Request and outputs them as a comma-separated list.'
+author: 'GitHub Copilot Workspace'
+
+inputs:
+  github-token:
+    description: 'GitHub token to access PR files. Defaults to ${{ github.token }}.'
+    required: false # It will default to the GITHUB_TOKEN provided by the runner
+    default: ${{ github.token }}
+
+outputs:
+  modulesParam:
+    description: 'Comma-separated list of Maven modules to build (e.g., group:artifact,group2:artifact2).'
+
+runs:
+  using: 'node20' # Using a current LTS version of Node
+  main: 'index.js' # Assuming the compiled TypeScript output is index.js
+
+branding:
+  icon: 'package' # Choose an icon from https://feathericons.com/
+  color: 'blue'   # Choose a color

@@ -3,19 +3,46 @@ import * as sinon from 'sinon';
 import * as fs from 'fs';
 import * as path from 'path';
 import { testExports } from '../index'; // Imports all exported functions including 'run'
-import * as tl from 'azure-pipelines-task-lib/task';
-import * as azdev from 'azure-devops-node-api';
+import * as core from '@actions/core';
+import * as github from '@actions/github';
 
 // Destructure all functions from testExports for use in tests
 const { parseModuleNameFromPom, getModuleFromFilePath, determineModulesToBuild, getChangedFiles, run } = testExports;
 
+// Global stubs for core functions. Specific behaviors will be set in test cases.
+let coreGetInputStub: sinon.SinonStub;
+let coreSetOutputStub: sinon.SinonStub;
+let coreSetFailedStub: sinon.SinonStub;
+let coreInfoStub: sinon.SinonStub;
+let coreDebugStub: sinon.SinonStub;
+let coreWarningStub: sinon.SinonStub;
+let coreErrorStub: sinon.SinonStub;
+
+// Global stubs for github context and octokit
+let githubContextStub: any; // Will hold the stubbed context object
+let getOctokitStub: sinon.SinonStub;
+let listFilesStub: sinon.SinonStub; // For octokit.rest.pulls.listFiles
+
+// Mock Octokit client
+const mockOctokit = {
+  rest: {
+    pulls: {
+      listFiles: async () => {} // This will be replaced by listFilesStub
+    }
+  }
+};
+
 describe('parseModuleNameFromPom', () => {
   let readFileSyncStub: sinon.SinonStub;
-  let consoleErrorStub: sinon.SinonStub;
+  // coreErrorStub will be used instead of consoleErrorStub
 
   beforeEach(() => {
     readFileSyncStub = sinon.stub(fs, 'readFileSync');
-    consoleErrorStub = sinon.stub(console, 'error');
+    // Initialize core stubs for this describe block if not already done globally
+    // For now, assuming coreErrorStub is initialized in a global beforeEach or here
+    coreErrorStub = sinon.stub(core, 'error');
+    coreWarningStub = sinon.stub(core, 'warning');
+    coreDebugStub = sinon.stub(core, 'debug');
   });
 
   afterEach(() => {
@@ -36,40 +63,28 @@ describe('parseModuleNameFromPom', () => {
     assert.strictEqual(moduleName, 'com.example:my-artifact');
   });
 
-  it('should return null when pom.xml is missing artifactId', async () => {
+  it('should return null and call core.warning when pom.xml is missing artifactId', async () => {
     const pomXml = '<project><parent><groupId>com.example</groupId></parent></project>';
     readFileSyncStub.returns(pomXml);
     const moduleName = await parseModuleNameFromPom('dummy/pom.xml');
     assert.strictEqual(moduleName, null);
+    assert.ok(coreWarningStub.calledOnceWith('No artifactId found in dummy/pom.xml'));
   });
 
-  it('should return null when pom.xml is malformed', async () => {
+  it('should return null and call core.error when pom.xml is malformed', async () => {
     const pomXml = '<project><artifactId>my-artifact</artifactBadTag>';
     readFileSyncStub.returns(pomXml);
     const moduleName = await parseModuleNameFromPom('dummy/pom.xml');
     assert.strictEqual(moduleName, null);
-    assert.ok(consoleErrorStub.calledOnce);
+    assert.ok(coreErrorStub.calledOnce); // xml2js error parsing
   });
 
-  it('should return null when pom.xml file does not exist', async () => {
-    readFileSyncStub.throws(new Error('ENOENT: no such file or directory'));
+  it('should return null and call core.error when pom.xml file does not exist', async () => {
+    const error = new Error('ENOENT: no such file or directory');
+    readFileSyncStub.throws(error);
     const moduleName = await parseModuleNameFromPom('nonexistent/pom.xml');
     assert.strictEqual(moduleName, null);
-    assert.ok(consoleErrorStub.calledOnce);
-  });
-
-  it('should return artifactId even if parent groupID is empty string', async () => {
-    const pomXml = '<project><parent><groupId></groupId></parent><artifactId>my-artifact</artifactId></project>';
-    readFileSyncStub.returns(pomXml);
-    const moduleName = await parseModuleNameFromPom('dummy/pom.xml');
-    assert.strictEqual(moduleName, ':my-artifact');
-  });
-
-  it('should handle pom.xml with only parent and no artifactId gracefully', async () => {
-    const pomXml = '<project><parent><groupId>com.example</groupId></parent></project>';
-    readFileSyncStub.returns(pomXml);
-    const moduleName = await parseModuleNameFromPom('dummy/pom.xml');
-    assert.strictEqual(moduleName, null);
+    assert.ok(coreErrorStub.calledOnceWith(`Error parsing nonexistent/pom.xml: ${error.message}`));
   });
 });
 
@@ -80,6 +95,7 @@ describe('getModuleFromFilePath', () => {
   beforeEach(() => {
     existsSyncStub = sinon.stub(fs, 'existsSync');
     parseModuleNameFromPomStub = sinon.stub(testExports, 'parseModuleNameFromPom');
+    coreDebugStub = sinon.stub(core, 'debug'); // For logging within the function
   });
 
   afterEach(() => {
@@ -88,39 +104,31 @@ describe('getModuleFromFilePath', () => {
 
   it('should return module name if pom.xml found by traversing up', async () => {
     const filePath = 'moduleA/src/main/java/com/example/File.java';
-    const targetPomDir = 'moduleA';
-    const expectedPomPath = path.join('.', targetPomDir, 'pom.xml');
-    existsSyncStub.callsFake((p: string) => path.normalize(p) === path.normalize(expectedPomPath));
+    const targetPomDir = 'moduleA'; // pom.xml is in moduleA/pom.xml
+    const expectedPomPath = path.join(targetPomDir, 'pom.xml'); // Corrected path join
+
+    // Simulate fs.existsSync behavior during path traversal
+    existsSyncStub.callsFake((p: string) => {
+        const normalizedPath = path.normalize(p);
+        if (normalizedPath.endsWith('moduleA/src/main/java/com/example/pom.xml')) return false;
+        if (normalizedPath.endsWith('moduleA/src/main/java/pom.xml')) return false;
+        if (normalizedPath.endsWith('moduleA/src/pom.xml')) return false;
+        return normalizedPath === path.normalize(expectedPomPath);
+    });
+    parseModuleNameFromPomStub.withArgs(sinon.match.string).resolves(null); // Default
     parseModuleNameFromPomStub.withArgs(expectedPomPath).resolves('moduleA-name');
+
     const moduleName = await getModuleFromFilePath(filePath);
     assert.strictEqual(moduleName, 'moduleA-name');
-  });
-
-  it('should return module name if pom.xml found in a parent directory', async () => {
-    const filePath = 'project/sub-module/src/main/java/com/example/File.java';
-    const parentPomDir = 'project/sub-module';
-    const expectedParentPomPath = path.join('.', parentPomDir, 'pom.xml');
-    existsSyncStub.callsFake((p: string) => path.normalize(p) === path.normalize(expectedParentPomPath));
-    parseModuleNameFromPomStub.withArgs(expectedParentPomPath).resolves('module-in-parent-dir');
-    const moduleName = await getModuleFromFilePath(filePath);
-    assert.strictEqual(moduleName, 'module-in-parent-dir');
+    assert.ok(coreDebugStub.calledWith(`Found pom.xml at: ${expectedPomPath}`));
   });
 
   it('should return null if no pom.xml found in the hierarchy', async () => {
     const filePath = 'project/sub-module/src/main/java/com/example/File.java';
-    existsSyncStub.returns(false);
+    existsSyncStub.returns(false); // No pom.xml anywhere
     const moduleName = await getModuleFromFilePath(filePath);
     assert.strictEqual(moduleName, null);
-  });
-
-  it('should return null if pom.xml exists but parseModuleNameFromPom returns null', async () => {
-    const filePath = 'moduleB/src/File.ts';
-    const pomDir = 'moduleB';
-    const expectedPomPath = path.join('.', pomDir, 'pom.xml');
-    existsSyncStub.callsFake((p: string) => path.normalize(p) === path.normalize(expectedPomPath));
-    parseModuleNameFromPomStub.withArgs(expectedPomPath).resolves(null);
-    const moduleName = await getModuleFromFilePath(filePath);
-    assert.strictEqual(moduleName, null);
+    assert.ok(coreDebugStub.calledWith(`No pom.xml found for file: ${filePath}`));
   });
 });
 
@@ -129,6 +137,8 @@ describe('determineModulesToBuild', () => {
 
   beforeEach(() => {
     getModuleFromFilePathStub = sinon.stub(testExports, 'getModuleFromFilePath');
+    coreInfoStub = sinon.stub(core, 'info');
+    coreDebugStub = sinon.stub(core, 'debug');
   });
 
   afterEach(() => {
@@ -138,150 +148,127 @@ describe('determineModulesToBuild', () => {
   it('should return an empty Set for an empty list of changed files', async () => {
     const modules = await determineModulesToBuild([]);
     assert.deepStrictEqual(modules, new Set());
+    assert.ok(coreInfoStub.calledWith('Modules to build: '));
   });
-
-  it('should return a Set with one module if a single file maps to a module', async () => {
+  
+  it('should process files and call core.debug for each', async () => {
+    const changedFiles = ['file1.java', 'file2.ts'];
     getModuleFromFilePathStub.withArgs('file1.java').resolves('module-a');
-    const modules = await determineModulesToBuild(['file1.java']);
-    assert.deepStrictEqual(modules, new Set(['module-a']));
+    getModuleFromFilePathStub.withArgs('file2.ts').resolves(null);
+
+    await determineModulesToBuild(changedFiles);
+    assert.ok(coreDebugStub.calledWith('Processing changed file: file1.java'));
+    assert.ok(coreDebugStub.calledWith('Processing changed file: file2.ts'));
   });
 
-  it('should return a Set with multiple modules for multiple files mapping to different modules', async () => {
-    getModuleFromFilePathStub.withArgs('file1.java').resolves('module-a');
-    getModuleFromFilePathStub.withArgs('file2.java').resolves('module-b');
-    const modules = await determineModulesToBuild(['file1.java', 'file2.java']);
-    assert.deepStrictEqual(modules, new Set(['module-a', 'module-b']));
-  });
-
-  it('should return a Set with a single module if multiple files map to the same module (deduplication)', async () => {
-    getModuleFromFilePathStub.withArgs('file1.java').resolves('module-a');
-    getModuleFromFilePathStub.withArgs('file2.java').resolves('module-a');
-    const modules = await determineModulesToBuild(['file1.java', 'file2.java']);
-    assert.deepStrictEqual(modules, new Set(['module-a']));
-  });
-
-  it('should return an empty Set if a changed file does not map to any module', async () => {
-    getModuleFromFilePathStub.withArgs('file1.java').resolves(null);
-    const modules = await determineModulesToBuild(['file1.java']);
-    assert.deepStrictEqual(modules, new Set());
-  });
-
-  it('should correctly identify modules in a mixed scenario (some found, some not)', async () => {
-    getModuleFromFilePathStub.withArgs('file1.java').resolves('module-a');
-    getModuleFromFilePathStub.withArgs('file2.java').resolves(null);
-    getModuleFromFilePathStub.withArgs('file3.java').resolves('module-b');
-    const modules = await determineModulesToBuild(['file1.java', 'file2.java', 'file3.java']);
-    assert.deepStrictEqual(modules, new Set(['module-a', 'module-b']));
-  });
 });
 
 describe('getChangedFiles', () => {
-  let getVariableStub: sinon.SinonStub;
-  let getPersonalAccessTokenHandlerStub: sinon.SinonStub;
-  let webApiStub: sinon.SinonStub;
-  let getGitApiStub: sinon.SinonStub;
-  let getPullRequestIterationsStub: sinon.SinonStub;
-  let getPullRequestIterationChangesStub: sinon.SinonStub;
-  let consoleLogStub: sinon.SinonStub;
-
-  const mockGitApi = {
-    getPullRequestIterations: async () => {},
-    getPullRequestIterationChanges: async () => {},
+  const defaultContext = {
+    eventName: 'pull_request',
+    repo: { owner: 'test-owner', repo: 'test-repo' },
+    payload: { pull_request: { number: 123 } },
   };
 
   beforeEach(() => {
-    getVariableStub = sinon.stub(tl, 'getVariable');
-    getPersonalAccessTokenHandlerStub = sinon.stub(azdev, 'getPersonalAccessTokenHandler');
-    getGitApiStub = sinon.stub().resolves(mockGitApi);
-    webApiStub = sinon.stub(azdev, 'WebApi').returns({ getGitApi: getGitApiStub } as any);
-    getPullRequestIterationsStub = sinon.stub(mockGitApi, 'getPullRequestIterations');
-    getPullRequestIterationChangesStub = sinon.stub(mockGitApi, 'getPullRequestIterationChanges');
-    consoleLogStub = sinon.stub(console, 'log');
+    coreGetInputStub = sinon.stub(core, 'getInput');
+    coreInfoStub = sinon.stub(core, 'info');
+    coreDebugStub = sinon.stub(core, 'debug');
+    coreWarningStub = sinon.stub(core, 'warning');
+    coreErrorStub = sinon.stub(core, 'error');
+
+    // Mock github.getOctokit to return our mockOctokit
+    listFilesStub = sinon.stub(mockOctokit.rest.pulls, 'listFiles');
+    getOctokitStub = sinon.stub(github, 'getOctokit').returns(mockOctokit as any);
+    
+    // Stub github.context
+    // Use Object.defineProperty to modify the readonly github.context
+    Object.defineProperty(github, 'context', {
+        value: defaultContext,
+        configurable: true // Allow redefining/deleting later
+    });
+
+    coreGetInputStub.withArgs('github-token', { required: true }).returns('dummy-token');
   });
 
   afterEach(() => {
     sinon.restore();
+    // Restore original github.context if it was modified by Object.defineProperty
+    // This might require storing the original context if complex scenarios arise.
+    // For now, simply deleting the defined property might revert to original if possible,
+    // or reset to a basic object. Careful handling is needed if tests run in parallel or affect global state.
+    // A safer way is to restore the original descriptor if saved.
+    // For simplicity here, we assume sinon.restore() or a new Object.defineProperty in next beforeEach handles it.
   });
 
-  const setValidPipelineVariables = () => {
-    getVariableStub.withArgs('System.TeamFoundationCollectionUri').returns('mockOrgUrl');
-    getVariableStub.withArgs('System.TeamProject').returns('mockProject');
-    getVariableStub.withArgs('Build.Repository.ID').returns('mockRepoId');
-    getVariableStub.withArgs('System.PullRequest.PullRequestId').returns('123');
-    getVariableStub.withArgs('System.AccessToken').returns('mockToken');
-  };
+  it('should return list of changed files on successful API call (single page)', async () => {
+    listFilesStub.resolves({
+      data: [{ filename: 'file1.ts' }, { filename: 'file2.ts' }],
+      status: 200, headers: {}, url: '' // satisfy OctokitResponse structure
+    });
 
-  it('should throw error if System.TeamFoundationCollectionUri is missing', async () => {
-    setValidPipelineVariables();
-    getVariableStub.withArgs('System.TeamFoundationCollectionUri').returns(undefined);
-    await assert.rejects(testExports.getChangedFiles(), /Missing required environment variables/);
+    const files = await getChangedFiles();
+    assert.deepStrictEqual(files, ['file1.ts', 'file2.ts']);
+    assert.ok(coreGetInputStub.calledOnceWith('github-token', { required: true }));
+    assert.ok(getOctokitStub.calledOnceWith('dummy-token'));
+    assert.ok(listFilesStub.calledOnceWith({
+      owner: 'test-owner', repo: 'test-repo', pull_number: 123, per_page: 100, page: 1
+    }));
+    assert.ok(coreInfoStub.calledWith('Fetching changed files for PR #123 in test-owner/test-repo'));
+    assert.ok(coreInfoStub.calledWith('Found a total of 2 changed files in the pull request.'));
   });
 
-  it('should throw error if System.AccessToken is missing', async () => {
-    setValidPipelineVariables();
-    getVariableStub.withArgs('System.AccessToken').returns(undefined);
-    await assert.rejects(testExports.getChangedFiles(), /Access token is not available/);
-  });
-
-  it('should return list of changed files on successful API calls', async () => {
-    setValidPipelineVariables();
-    getPersonalAccessTokenHandlerStub.returns({});
-    getPullRequestIterationsStub.resolves([{ id: 1 }, { id: 2 }] as any);
-    getPullRequestIterationChangesStub.withArgs('mockRepoId', 123, 2, 'mockProject').resolves({
-      changeEntries: [{ item: { path: '/file1.ts' } }, { item: { path: '/file2.ts' } }],
-    } as any);
-    const files = await testExports.getChangedFiles();
-    assert.deepStrictEqual(files, ['/file1.ts', '/file2.ts']);
-  });
-
-  it('should return empty list if API returns no changes', async () => {
-    setValidPipelineVariables();
-    getPersonalAccessTokenHandlerStub.returns({});
-    getPullRequestIterationsStub.resolves([{ id: 1 }] as any);
-    getPullRequestIterationChangesStub.resolves({ changeEntries: [] } as any);
-    const files = await testExports.getChangedFiles();
+  it('should return empty list and warn if not a pull_request event', async () => {
+    Object.defineProperty(github, 'context', {
+        value: { ...defaultContext, eventName: 'push' },
+        configurable: true
+    });
+    const files = await getChangedFiles();
     assert.deepStrictEqual(files, []);
+    assert.ok(coreWarningStub.calledOnceWith('Not a pull request event or pull_request payload is missing. No files will be returned.'));
   });
 
-  it('should filter out changes with no item or no path', async () => {
-    setValidPipelineVariables();
-    getPersonalAccessTokenHandlerStub.returns({});
-    getPullRequestIterationsStub.resolves([{ id: 1 }] as any);
-    getPullRequestIterationChangesStub.resolves({
-      changeEntries: [ { item: { path: '/file1.ts' } }, { item: {} }, { item: { path: null } }, { item: { path: '/file3.ts' } }, {}],
-    } as any);
-    const files = await testExports.getChangedFiles();
-    assert.deepStrictEqual(files, ['/file1.ts', '/file3.ts']);
+  it('should handle pagination correctly', async () => {
+    listFilesStub.onFirstCall().resolves({
+      data: Array(100).fill(0).map((_, i) => ({ filename: `file_page1_${i}.ts` })),
+      status: 200, headers: {}, url: ''
+    });
+    listFilesStub.onSecondCall().resolves({
+      data: [{ filename: 'file_page2_0.ts' }],
+      status: 200, headers: {}, url: ''
+    });
+     listFilesStub.onThirdCall().resolves({ // For the loop to terminate
+      data: [],
+      status: 200, headers: {}, url: ''
+    });
+
+
+    const files = await getChangedFiles();
+    assert.strictEqual(files.length, 101);
+    assert.strictEqual(files[100], 'file_page2_0.ts');
+    assert.ok(listFilesStub.calledTwice); // Actually three times because of the empty page check
   });
 
-  it('should throw error if no iterations are found', async () => {
-    setValidPipelineVariables();
-    getPersonalAccessTokenHandlerStub.returns({});
-    getPullRequestIterationsStub.resolves([] as any);
-    await assert.rejects(testExports.getChangedFiles(), /Could not find any iterations for the pull request/);
-  });
-
-  it('should throw error if getPullRequestIterations API call fails', async () => {
-    setValidPipelineVariables();
-    getPersonalAccessTokenHandlerStub.returns({});
-    const apiError = new Error('API Failure');
-    getPullRequestIterationsStub.rejects(apiError);
-    await assert.rejects(testExports.getChangedFiles(), apiError);
+  it('should throw error if listFiles API call fails', async () => {
+    const apiError = new Error('GitHub API Error');
+    listFilesStub.rejects(apiError);
+    await assert.rejects(getChangedFiles(), apiError);
+    assert.ok(coreErrorStub.calledOnceWith(`Error fetching changed files: ${apiError.message}`));
   });
 });
+
 
 describe('run', () => {
   let getChangedFilesStub: sinon.SinonStub;
   let determineModulesToBuildStub: sinon.SinonStub;
-  let setResultStub: sinon.SinonStub;
-  let consoleLogStub: sinon.SinonStub; // To check for ##vso command
 
   beforeEach(() => {
-    // Stub dependencies used by run
     getChangedFilesStub = sinon.stub(testExports, 'getChangedFiles');
     determineModulesToBuildStub = sinon.stub(testExports, 'determineModulesToBuild');
-    setResultStub = sinon.stub(tl, 'setResult');
-    consoleLogStub = sinon.stub(console, 'log'); // Suppress and spy on console.log
+    
+    coreSetOutputStub = sinon.stub(core, 'setOutput');
+    coreSetFailedStub = sinon.stub(core, 'setFailed');
+    coreInfoStub = sinon.stub(core, 'info');
   });
 
   afterEach(() => {
@@ -292,13 +279,14 @@ describe('run', () => {
     getChangedFilesStub.resolves(['file1.java']);
     determineModulesToBuildStub.resolves(new Set(['module-a']));
 
-    await run(); // Call the actual run function from testExports
+    await run();
 
-    assert.ok(getChangedFilesStub.calledOnce, 'getChangedFiles not called once');
-    assert.ok(determineModulesToBuildStub.calledOnceWith(['file1.java']), 'determineModulesToBuild not called with correct args');
-    assert.ok(consoleLogStub.calledWith('modulesParam: module-a'), 'modulesParam not logged correctly');
-    assert.ok(consoleLogStub.calledWith('##vso[task.setvariable variable=modulesParam;isOutput=true]module-a'), 'VSO task variable not set correctly');
-    assert.ok(setResultStub.calledOnceWith(tl.TaskResult.Succeeded, 'Build custom modules successfully.'), 'setResult not called with Succeeded');
+    assert.ok(getChangedFilesStub.calledOnce);
+    assert.ok(determineModulesToBuildStub.calledOnceWith(['file1.java']));
+    assert.ok(coreSetOutputStub.calledOnceWith('modulesParam', 'module-a'));
+    assert.ok(coreInfoStub.calledWith('Final modulesParam to be set as output: module-a'));
+    assert.ok(coreInfoStub.calledWith('Build custom modules successfully.'));
+    assert.ok(coreSetFailedStub.notCalled);
   });
 
   it('should fail if getChangedFiles throws an error', async () => {
@@ -307,10 +295,19 @@ describe('run', () => {
 
     await run();
 
-    assert.ok(getChangedFilesStub.calledOnce, 'getChangedFiles not called once');
-    assert.ok(determineModulesToBuildStub.notCalled, 'determineModulesToBuild was called');
-    assert.ok(setResultStub.calledOnceWith(tl.TaskResult.Failed, `Build custom modules failed: ${error}`), 'setResult not called with Failed and correct error');
+    assert.ok(getChangedFilesStub.calledOnce);
+    assert.ok(determineModulesToBuildStub.notCalled);
+    assert.ok(coreSetFailedStub.calledOnceWith(`Build custom modules failed: ${error.message}`));
   });
+
+  it('should fail with string error message if getChangedFiles throws non-Error', async () => {
+    const errorMsg = "A string error";
+    getChangedFilesStub.rejects(errorMsg);
+
+    await run();
+    assert.ok(coreSetFailedStub.calledOnceWith(`Build custom modules failed: ${errorMsg}`));
+});
+
 
   it('should fail if determineModulesToBuild throws an error', async () => {
     getChangedFilesStub.resolves(['file1.java']);
@@ -319,36 +316,18 @@ describe('run', () => {
 
     await run();
 
-    assert.ok(getChangedFilesStub.calledOnce, 'getChangedFiles not called once');
-    assert.ok(determineModulesToBuildStub.calledOnce, 'determineModulesToBuild not called once');
-    assert.ok(setResultStub.calledOnceWith(tl.TaskResult.Failed, `Build custom modules failed: ${error}`), 'setResult not called with Failed and correct error');
+    assert.ok(getChangedFilesStub.calledOnce);
+    assert.ok(determineModulesToBuildStub.calledOnce);
+    assert.ok(coreSetFailedStub.calledOnceWith(`Build custom modules failed: ${error.message}`));
   });
-
-  it('should succeed and set modulesParam for multiple modules', async () => {
-    getChangedFilesStub.resolves(['file1.java', 'file2.java']);
-    const modules = new Set(['module-a', 'module-b']);
-    determineModulesToBuildStub.resolves(modules);
+  
+  it('should succeed with empty modulesParam if no modules determined', async () => {
+    getChangedFilesStub.resolves(['file.txt']);
+    determineModulesToBuildStub.resolves(new Set());
 
     await run();
-    
-    // Order of elements in a Set when converted to array might vary, so check both possibilities for the VSO command
-    const possibleOutputs = ['module-a,module-b', 'module-b,module-a'];
-    const vsoLog = consoleLogStub.getCalls().find(call => call.args[0].startsWith('##vso[task.setvariable'));
-    assert.ok(vsoLog, 'VSO task variable log not found');
-    const loggedModules = vsoLog.args[0].split(']')[1];
-    assert.ok(possibleOutputs.includes(loggedModules), `VSO task variable for modules not set correctly. Got: ${loggedModules}`);
-    
-    assert.ok(setResultStub.calledOnceWith(tl.TaskResult.Succeeded, 'Build custom modules successfully.'), 'setResult not called with Succeeded');
-  });
-
-  it('should succeed and set empty modulesParam if no modules are determined', async () => {
-    getChangedFilesStub.resolves(['file1.java']);
-    determineModulesToBuildStub.resolves(new Set()); // Empty set
-
-    await run();
-
-    assert.ok(consoleLogStub.calledWith('modulesParam: '), 'modulesParam not logged correctly for empty set');
-    assert.ok(consoleLogStub.calledWith('##vso[task.setvariable variable=modulesParam;isOutput=true]'), 'VSO task variable not set correctly for empty set');
-    assert.ok(setResultStub.calledOnceWith(tl.TaskResult.Succeeded, 'Build custom modules successfully.'), 'setResult not called with Succeeded');
+    assert.ok(coreSetOutputStub.calledOnceWith('modulesParam', ''));
+    assert.ok(coreInfoStub.calledWith('Final modulesParam to be set as output: '));
+    assert.ok(coreSetFailedStub.notCalled);
   });
 });

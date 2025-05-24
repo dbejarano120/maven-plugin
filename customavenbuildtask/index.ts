@@ -1,5 +1,5 @@
-import * as tl from 'azure-pipelines-task-lib/task';
-import * as azdev from 'azure-devops-node-api';
+import * as core from '@actions/core';
+import * as github from '@actions/github';
 import * as path from 'path';
 import * as fs from 'fs';
 import { parseStringPromise } from 'xml2js';
@@ -17,68 +17,69 @@ async function run() {
     const modulesParam = Array.from(modulesToBuild).join(',');
 
     // Log the modulesParam for debugging
-    console.log(`modulesParam: ${modulesParam}`);
+    core.info(`Final modulesParam to be set as output: ${modulesParam}`);
 
-    // Set modulesParam as an output variable
-    console.log(`##vso[task.setvariable variable=modulesParam;isOutput=true]${modulesParam}`);    
-
-    tl.setResult(tl.TaskResult.Succeeded, 'Build custom modules successfully.');
-  } catch (error) {
-    tl.setResult(tl.TaskResult.Failed, `Build custom modules failed: ${error}`);
+    // Set modulesParam as an output variable for GitHub Actions
+    core.setOutput('modulesParam', modulesParam);
+    core.info('Build custom modules successfully.'); // Explicit success message
+  } catch (error: any) { 
+    if (error instanceof Error) {
+      core.setFailed(`Build custom modules failed: ${error.message}`);
+    } else {
+      core.setFailed(`Build custom modules failed: ${String(error)}`);
+    }
   }
 }
 
-// Updated getChangedFiles function using azure-devops-node-api
+// Rewritten getChangedFiles function using GitHub Actions toolkit
 async function getChangedFiles(): Promise<string[]> {
-  //console.log('Available variables:', tl.getVariables());
+  const token = core.getInput('github-token', { required: true });
+  const octokit = github.getOctokit(token);
+  const context = github.context;
 
-  const orgUrl = tl.getVariable('System.TeamFoundationCollectionUri');
-  console.log('orgUrl:', orgUrl);
-  const project = tl.getVariable('System.TeamProject');
-  console.log('project:', project);
-  const repoId = tl.getVariable('Build.Repository.ID');
-  console.log('repoId:', repoId);
-  const pullRequestId = tl.getVariable('System.PullRequest.PullRequestId');
-  console.log('pullRequestId:', pullRequestId);
-
-  if (!orgUrl || !project || !repoId || !pullRequestId) {
-    throw new Error('Missing required environment variables to fetch pull request details.');
+  if (context.eventName !== 'pull_request' || !context.payload.pull_request) {
+    core.warning('Not a pull request event or pull_request payload is missing. No files will be returned.');
+    return [];
   }
 
-  // Get Azure DevOps token
-  const token = tl.getVariable('System.AccessToken');
-  if (!token) {
-    throw new Error('Access token is not available. Please check pipeline permissions.');
+  const owner = context.repo.owner;
+  const repo = context.repo.repo;
+  const pull_number = context.payload.pull_request.number;
+
+  core.info(`Fetching changed files for PR #${pull_number} in ${owner}/${repo}`);
+
+  let files: string[] = [];
+  const per_page = 100; // Max items per page for this endpoint
+  let page = 1;
+  let response;
+
+  try {
+    do {
+      response = await octokit.rest.pulls.listFiles({
+        owner,
+        repo,
+        pull_number,
+        per_page,
+        page,
+      });
+
+      if (response.data.length > 0) {
+        const newFiles = response.data.map(file => file.filename);
+        core.debug(`Found ${newFiles.length} files on page ${page}: ${newFiles.join(', ')}`);
+        files = files.concat(newFiles);
+      } else {
+        core.debug(`No files found on page ${page}.`);
+      }
+      page++;
+    } while (response.data.length === per_page);
+
+    core.info(`Found a total of ${files.length} changed files in the pull request.`);
+    core.debug(`Changed files list: ${files.join(', ')}`);
+    return files;
+  } catch (error: any) { // Explicitly type error
+    core.error(`Error fetching changed files: ${error.message}`);
+    throw error; // Re-throw to be caught by the main run function's try/catch
   }
-
-  // Authenticate with Azure DevOps API
-  const authHandler = azdev.getPersonalAccessTokenHandler(token);
-  const connection = new azdev.WebApi(orgUrl, authHandler);
-  const gitApi = await connection.getGitApi();
-
-  // Get the latest iteration ID
-  const iterations = await gitApi.getPullRequestIterations(repoId, parseInt(pullRequestId), project);
-  const latestIteration = iterations[iterations.length - 1];
-
-  if (!latestIteration) {
-    throw new Error('Could not find any iterations for the pull request.');
-  }
-
-  // Fetch changes in the latest iteration
-  const iterationChanges = await gitApi.getPullRequestIterationChanges(
-    repoId,
-    parseInt(pullRequestId),
-    latestIteration.id,
-    project
-  );
-
-  // Extract changed file paths
-  const changedFiles = iterationChanges.changeEntries
-    .map(change => change.item?.path)
-    .filter(Boolean) as string[];
-
-  console.log('Changed files:', changedFiles);
-  return changedFiles;
 }
 
 // Function to determine modules to build based on changed files
@@ -86,13 +87,13 @@ async function determineModulesToBuild(changedFiles: string[]): Promise<Set<stri
   const modulesToBuild: Set<string> = new Set();
 
   for (const file of changedFiles) {
-    //console.log('Changed file:', file);
+    core.debug(`Processing changed file: ${file}`);
     const modulePath = await getModuleFromFilePath(file);
     if (modulePath) {
       modulesToBuild.add(modulePath);
     }
   }
-  console.log('modules To Build:', modulesToBuild);
+  core.info(`Modules to build: ${Array.from(modulesToBuild).join(', ')}`);
   return modulesToBuild;
 }
 
@@ -100,22 +101,27 @@ async function determineModulesToBuild(changedFiles: string[]): Promise<Set<stri
 async function getModuleFromFilePath(filePath: string): Promise<string | null> {
   // Start with the directory containing the file
   let currentDir = path.dirname(filePath);
-  //console.log('currentDir:', currentDir);
-  while  (currentDir !== path.parse(currentDir).root) { // Stop when reaching the root
-    const pomPath = path.join('.', currentDir, 'pom.xml'); // Prepend '.' to make it relative
-    //console.log('pomPath:', pomPath);
+  core.debug(`Starting module search for file: ${filePath} in directory: ${currentDir}`);
+  while  (currentDir !== path.parse(currentDir).root && currentDir !== '.') { // Stop when reaching the root or current dir itself
+    const pomPath = path.join(currentDir, 'pom.xml'); // No longer prepending '.', path.join handles it correctly
+    core.debug(`Checking POM at: ${pomPath}`);
     if (fs.existsSync(pomPath)) {
-      // If pom.xml exists in this directory, try to parse it for the module name
+      core.debug(`Found pom.xml at: ${pomPath}`);
       const moduleName = await parseModuleNameFromPom(pomPath);
       if (moduleName) {
         return moduleName;
       }
     }
     // Move one level up in the directory hierarchy
-    currentDir = path.dirname(currentDir);
-    //console.log('Move one level up currentDir:', currentDir);
-
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) { // Check to prevent infinite loop if dirname stops changing (e.g., at root)
+        core.debug(`Reached root or stalled at ${currentDir}, stopping search.`);
+        break;
+    }
+    currentDir = parentDir;
+    core.debug(`Moving up to: ${currentDir}`);
   }
+  core.debug(`No pom.xml found for file: ${filePath}`);
   return null;
 }
 
@@ -126,26 +132,27 @@ async function parseModuleNameFromPom(pomPath: string): Promise<string | null> {
     const result = await parseStringPromise(pomXml);
     const currentArtifactId = result.project.artifactId?.[0];
     if (!currentArtifactId) {
-      //console.warn(`No artifactId found in ${pomPath}`);
+      core.warning(`No artifactId found in ${pomPath}`);
       return null;
     }
 
     // Check for parent groupId
-    //console.log('CurrentArtifactId:', currentArtifactId);
+    core.debug(`Current artifactId: ${currentArtifactId} in ${pomPath}`);
     let moduleName = currentArtifactId;
     const parent = result.project.parent?.[0];
     if (parent) {
       const parentGroupId = parent.groupId?.[0];
       if (parentGroupId) {
-        moduleName = parentGroupId + ':' + moduleName
+        moduleName = parentGroupId + ':' + moduleName;
       }
     }
 
-    //console.log('ModuleName:', moduleName);
+    core.debug(`Module name: ${moduleName} from ${pomPath}`);
     return moduleName;
 
-  } catch (error) {
-    console.error(`Error parsing ${pomPath}:`, error);
+  } catch (error: any) { 
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    core.error(`Error parsing ${pomPath}: ${errorMessage}`);
   }
   return null;
 }
