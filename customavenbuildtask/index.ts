@@ -150,4 +150,6 @@ async function parseModuleNameFromPom(pomPath: string): Promise<string | null> {
   return null;
 }
 
-run();
+// run(); // Commented out to prevent auto-execution during tests
+
+export const testExports = { parseModuleNameFromPom, getModuleFromFilePath, determineModulesToBuild, getChangedFiles, run };
