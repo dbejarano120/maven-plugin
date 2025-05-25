@@ -1,6 +1,6 @@
 name: 'Custom Maven Build Task'
 description: 'Determines Maven modules to build based on changed files in a Pull Request and outputs them as a comma-separated list.'
-author: 'GitHub Copilot Workspace'
+author: 'dbejarano120'
 
 inputs:
   github-token:
